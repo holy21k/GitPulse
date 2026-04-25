@@ -2,55 +2,74 @@
 import { useState, useEffect, useRef } from 'react';
 import { updateClaim } from '@/lib/api';
 
-interface TimerProps {
+interface Props {
   claimId: number;
   initialSecs: number;
   onUpdate: (secs: number) => void;
 }
 
-export default function Timer({ claimId, initialSecs, onUpdate }: TimerProps) {
-  const [secs, setSecs] = useState(initialSecs);
+export function Timer({ claimId, initialSecs, onUpdate }: Props) {
+  const [secs, setSecs]       = useState(initialSecs);
   const [running, setRunning] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const syncRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const saveRef     = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (running) {
       intervalRef.current = setInterval(() => setSecs(s => s + 1), 1000);
-      // Persist to backend every 30s
-      syncRef.current = setInterval(() => {
-        setSecs(s => {
-          updateClaim(claimId, { time_spent_secs: s }).catch(() => {});
-          onUpdate(s);
-          return s;
-        });
-      }, 30000);
     } else {
       if (intervalRef.current) clearInterval(intervalRef.current);
-      if (syncRef.current) clearInterval(syncRef.current);
-      // Save immediately on pause
-      updateClaim(claimId, { time_spent_secs: secs }).catch(() => {});
-      onUpdate(secs);
     }
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      if (syncRef.current) clearInterval(syncRef.current);
-    };
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [running]);
 
-  const h = String(Math.floor(secs / 3600)).padStart(2, '0');
-  const m = String(Math.floor((secs % 3600) / 60)).padStart(2, '0');
-  const s = String(secs % 60).padStart(2, '0');
+  useEffect(() => {
+    if (running) {
+      saveRef.current = setInterval(async () => {
+        try {
+          await updateClaim(claimId, { time_spent_secs: secs });
+          onUpdate(secs);
+        } catch { /* silent — retries next tick */ }
+      }, 30000);
+    } else {
+      if (saveRef.current) clearInterval(saveRef.current);
+      if (secs !== initialSecs) {
+        updateClaim(claimId, { time_spent_secs: secs })
+          .then(() => onUpdate(secs))
+          .catch(() => {});
+      }
+    }
+    return () => { if (saveRef.current) clearInterval(saveRef.current); };
+  }, [running, secs]);
+
+  function fmt(s: number) {
+    const h   = String(Math.floor(s / 3600)).padStart(2, '0');
+    const m   = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
+    const sec = String(s % 60).padStart(2, '0');
+    return `${h}:${m}:${sec}`;
+  }
 
   return (
-    <div className="flex items-center gap-2 mt-2">
-      <span className="font-mono text-sm text-gray-300">{h}:{m}:{s}</span>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <span style={{
+        fontFamily: 'IBM Plex Mono, monospace',
+        fontSize: 14,
+        color: running ? 'var(--accent-green)' : 'var(--text-secondary)',
+        minWidth: 72,
+      }}>
+        {fmt(secs)}
+      </span>
       <button
         onClick={() => setRunning(r => !r)}
-        className={`text-xs px-2 py-0.5 rounded font-medium transition-all
-          ${running ? 'bg-yellow-600 hover:bg-yellow-500' : 'bg-green-700 hover:bg-green-600'}`}
+        style={{
+          padding: '4px 10px', borderRadius: 5, fontSize: 12,
+          border: '1px solid var(--border)',
+          background: running ? 'rgba(248,81,73,0.1)' : 'rgba(63,185,80,0.1)',
+          color: running ? 'var(--accent-red)' : 'var(--accent-green)',
+          cursor: 'pointer',
+        }}
       >
-        {running ? 'Pause' : 'Start'}
+        {running ? '⏸ Pause' : '▶ Start'}
       </button>
     </div>
   );
