@@ -73,9 +73,11 @@ USE_TZ = True
 STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# CORS — only allow the Next.js frontend
+# CORS — dynamic, set CORS_ALLOWED_ORIGINS in .env for production
 CORS_ALLOWED_ORIGINS = [
-    'http://localhost:3000',
+    origin.strip()
+    for origin in os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:3000').split(',')
+    if origin.strip()
 ]
 CORS_ALLOW_ALL_ORIGINS = False
 
@@ -83,6 +85,19 @@ CORS_ALLOW_ALL_ORIGINS = False
 SECURE_BROWSER_XSS_FILTER = True
 X_FRAME_OPTIONS = 'DENY'
 SECURE_CONTENT_TYPE_NOSNIFF = True
+
+# HTTPS enforcement — production only
+if not DEBUG:
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+
+# Request size limits — prevent DoS via huge payloads
+DATA_UPLOAD_MAX_MEMORY_SIZE = 1_048_576  # 1MB
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 20
 
 # Caching — in-memory, no Redis needed for MVP
 CACHES = {
