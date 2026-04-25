@@ -16,7 +16,7 @@ class ClaimedIssue(models.Model):
     status          = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Focused')
     claimed_at      = models.DateTimeField(auto_now_add=True)
     time_spent_secs = models.IntegerField(default=0)
-    notes           = models.TextField(blank=True)
+    notes           = models.TextField(blank=True, max_length=5000)
 
     def __str__(self):
         return f'{self.repo_name} — {self.title[:50]}'

@@ -1,12 +1,9 @@
 import os
+import logging
 import requests
 from django.core.cache import cache
 
-GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
-HEADERS = {
-    'Authorization': f'token {GITHUB_TOKEN}',
-    'Accept': 'application/vnd.github.v3+json',
-}
+logger = logging.getLogger(__name__)
 
 
 class GitHubRateLimitError(Exception):
@@ -17,14 +14,22 @@ class GitHubAPIError(Exception):
     pass
 
 
+def _get_headers():
+    token = os.getenv('GITHUB_TOKEN')
+    if not token:
+        raise GitHubAPIError('GITHUB_TOKEN not set in environment.')
+    return {
+        'Authorization': f'token {token}',
+        'Accept': 'application/vnd.github.v3+json',
+    }
+
+
 def _check_rate_limit(response):
     remaining = int(response.headers.get('X-RateLimit-Remaining', 1))
     reset = int(response.headers.get('X-RateLimit-Reset', 0))
 
-    # Cache quota so frontend can display it
     cache.set('github_quota', {'remaining': remaining, 'reset_at': reset}, 60)
-
-    print(f'GitHub API: {remaining} requests remaining. Resets at: {reset}')
+    logger.info('GitHub API: %s requests remaining. Resets at: %s', remaining, reset)
 
     if remaining == 0:
         raise GitHubRateLimitError(f'Rate limit hit. Resets at {reset}')
@@ -42,11 +47,11 @@ def fetch_good_first_issues(language='python', page=1):
         'page':     page,
     }
     try:
-        response = requests.get(url, headers=HEADERS, params=params, timeout=10)
+        response = requests.get(url, headers=_get_headers(), params=params, timeout=10)
         _check_rate_limit(response)
 
         if response.status_code == 401:
-            raise GitHubAPIError('Invalid GitHub token. Check your .env file.')
+            raise GitHubAPIError('Invalid GitHub token.')
         if response.status_code == 403:
             raise GitHubRateLimitError('GitHub rate limit exceeded.')
         if response.status_code == 422:
@@ -64,7 +69,7 @@ def fetch_good_first_issues(language='python', page=1):
 def check_issue_status(owner, repo, issue_number):
     url = f'https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}'
     try:
-        response = requests.get(url, headers=HEADERS, timeout=10)
+        response = requests.get(url, headers=_get_headers(), timeout=10)
         _check_rate_limit(response)
         response.raise_for_status()
         data = response.json()
@@ -74,5 +79,4 @@ def check_issue_status(owner, repo, issue_number):
 
 
 def get_quota_status():
-    """Return cached quota info without hitting GitHub."""
     return cache.get('github_quota', {'remaining': 'unknown', 'reset_at': 'unknown'})
