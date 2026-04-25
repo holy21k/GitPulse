@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { fetchClaims, updateClaim, deleteClaim, syncClaim } from '@/lib/api';
+import Timer from '@/components/Timer';
 import type { ClaimedIssue } from '@/types';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -10,25 +11,25 @@ const STATUS_COLORS: Record<string, string> = {
   Done:      'bg-green-500',
 };
 
-function formatTime(secs: number) {
-  const h = Math.floor(secs / 3600);
-  const m = Math.floor((secs % 3600) / 60);
-  return `${h}h ${m}m`;
-}
-
 export default function DashboardPage() {
-  const [claims, setClaims] = useState<ClaimedIssue[]>([]);
+  const [claims, setClaims]   = useState<ClaimedIssue[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState('');
 
   useEffect(() => {
     fetchClaims()
       .then(setClaims)
+      .catch(() => setError('Failed to load dashboard. Is the backend running?'))
       .finally(() => setLoading(false));
   }, []);
 
   async function changeStatus(id: number, status: ClaimedIssue['status']) {
-    const updated = await updateClaim(id, { status });
-    setClaims(prev => prev.map(c => c.id === id ? updated : c));
+    try {
+      const updated = await updateClaim(id, { status });
+      setClaims(prev => prev.map(c => c.id === id ? updated : c));
+    } catch {
+      setError('Failed to update status.');
+    }
   }
 
   async function handleDelete(id: number) {
@@ -46,15 +47,30 @@ export default function DashboardPage() {
     }
   }
 
+  function handleTimeUpdate(id: number, secs: number) {
+    setClaims(prev => prev.map(c => c.id === id ? { ...c, time_spent_secs: secs } : c));
+  }
+
   return (
     <main className="min-h-screen bg-gray-950 text-white p-8">
       <a href="/" className="text-gray-500 hover:text-white text-sm">← Back to Discovery</a>
       <h1 className="text-3xl font-bold text-green-400 mt-4 mb-2">My Pulse Dashboard</h1>
       <p className="text-gray-400 mb-8">{claims.length} active claims</p>
 
-      {loading && <p className="text-gray-500">Loading...</p>}
+      {loading && (
+        <div className="flex items-center gap-3 text-gray-500 py-20 justify-center">
+          <div className="w-5 h-5 border-2 border-gray-600 border-t-green-400 rounded-full animate-spin" />
+          Loading your claims...
+        </div>
+      )}
 
-      {!loading && claims.length === 0 && (
+      {error && (
+        <div className="bg-red-900/30 border border-red-700 text-red-300 rounded-lg px-4 py-3 mb-6">
+          {error}
+        </div>
+      )}
+
+      {!loading && !error && claims.length === 0 && (
         <div className="text-gray-600 text-center py-20">
           No claims yet. Go discover some issues!
         </div>
@@ -76,9 +92,12 @@ export default function DashboardPage() {
                 >
                   {claim.title}
                 </a>
-                <p className="text-gray-500 text-sm mt-1">
-                  {claim.repo_name} · Time spent: {formatTime(claim.time_spent_secs)}
-                </p>
+                <p className="text-gray-500 text-sm mt-1">{claim.repo_name}</p>
+                <Timer
+                  claimId={claim.id}
+                  initialSecs={claim.time_spent_secs}
+                  onUpdate={(secs) => handleTimeUpdate(claim.id, secs)}
+                />
               </div>
               <div className="flex gap-2 shrink-0 flex-wrap justify-end">
                 <select
