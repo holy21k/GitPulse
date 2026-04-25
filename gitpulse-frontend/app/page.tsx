@@ -1,9 +1,21 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { fetchIssues, createClaim } from '@/lib/api';
+import { NavBar } from '@/components/NavBar';
+import { IssueCard } from '@/components/IssueCard';
+import { SkeletonCard } from '@/components/SkeletonCard';
 import type { GitHubIssue } from '@/types';
 
-const LANGS = ['typescript', 'python', 'go', 'rust', 'javascript'];
+const LANGS = [
+  { id: 'typescript', label: 'TypeScript' },
+  { id: 'python',     label: 'Python' },
+  { id: 'go',         label: 'Go' },
+  { id: 'rust',       label: 'Rust' },
+  { id: 'javascript', label: 'JavaScript' },
+  { id: 'java',       label: 'Java' },
+  { id: 'cpp',        label: 'C++' },
+  { id: 'ruby',       label: 'Ruby' },
+];
 
 export default function DiscoveryPage() {
   const [issues, setIssues]   = useState<GitHubIssue[]>([]);
@@ -11,15 +23,33 @@ export default function DiscoveryPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState('');
   const [claimed, setClaimed] = useState<Set<number>>(new Set());
+  const [page, setPage]       = useState(1);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   useEffect(() => {
+    setIssues([]);  // clear immediately so lang change is always visible
     setLoading(true);
     setError('');
-    fetchIssues(lang)
+    setPage(1);
+    fetchIssues(lang, 1)
       .then(data => setIssues(data.items ?? []))
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
   }, [lang]);
+
+  async function handleLoadMore() {
+    const next = page + 1;
+    setLoadingMore(true);
+    try {
+      const data = await fetchIssues(lang, next);
+      setIssues(prev => [...prev, ...(data.items ?? [])]);
+      setPage(next);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to load more');
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   async function handleClaim(issue: GitHubIssue) {
     const repoName = issue.repository_url.replace('https://api.github.com/repos/', '');
@@ -37,78 +67,96 @@ export default function DiscoveryPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gray-950 text-white p-8">
-      <h1 className="text-3xl font-bold text-blue-400 mb-2">⚡ Git-Pulse</h1>
-      <p className="text-gray-400 mb-6">Find your next open source contribution</p>
+    <>
+      <NavBar />
+      <main style={{ maxWidth: 760, margin: '0 auto', padding: '32px 24px' }}>
+        {/* Hero */}
+        <div style={{ marginBottom: 28 }}>
+          <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>
+            Good First Issues
+          </h1>
+          <p style={{ fontSize: 14, color: 'var(--text-secondary)' }}>
+            Find beginner-friendly open source issues. Claim them. Track your work.
+          </p>
+        </div>
 
-      {/* Language Filter */}
-      <div className="flex gap-2 mb-8 flex-wrap">
-        {LANGS.map(l => (
-          <button
-            key={l}
-            onClick={() => setLang(l)}
-            className={`px-4 py-1 rounded-full text-sm font-medium transition-all
-              ${lang === l ? 'bg-blue-500 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}
-          >
-            {l}
-          </button>
-        ))}
-      </div>
+        {/* Language filter */}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 24 }}>
+          {LANGS.map(l => (
+            <button
+              key={l.id}
+              onClick={() => setLang(l.id)}
+              style={{
+                padding: '5px 14px', borderRadius: 20,
+                fontSize: 13, fontWeight: 500,
+                border: lang === l.id ? '1px solid var(--accent-blue)' : '1px solid var(--border)',
+                background: lang === l.id ? 'rgba(88,166,255,0.1)' : 'transparent',
+                color: lang === l.id ? 'var(--accent-blue)' : 'var(--text-secondary)',
+                cursor: 'pointer', transition: 'all 0.15s',
+              }}
+            >
+              {l.label}
+            </button>
+          ))}
+        </div>
 
-      {loading && <p className="text-gray-500">Loading issues...</p>}
-      {error && <p className="text-red-400 mb-4">{error}</p>}
-
-      {/* Issue Cards */}
-      <div className="grid gap-4">
-        {issues.map(issue => (
-          <div key={issue.id} className="bg-gray-900 border border-gray-800 rounded-lg p-5">
-            <div className="flex justify-between items-start gap-4">
-              <div className="min-w-0">
-                <a
-                  href={issue.html_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-blue-400 hover:underline font-medium"
-                >
-                  {issue.title}
-                </a>
-                <p className="text-gray-500 text-sm mt-1">
-                  {issue.repository_url.replace('https://api.github.com/repos/', '')}
-                  {' · '}{issue.comments} comments
-                </p>
-                <div className="flex gap-2 mt-2 flex-wrap">
-                  {issue.labels.map(l => (
-                    <span
-                      key={l.name}
-                      className="text-xs px-2 py-0.5 rounded-full"
-                      style={{ backgroundColor: `#${l.color}22`, color: `#${l.color}` }}
-                    >
-                      {l.name}
-                    </span>
-                  ))}
-                </div>
-              </div>
-              <button
-                onClick={() => handleClaim(issue)}
-                disabled={claimed.has(issue.id)}
-                className="shrink-0 px-4 py-2 rounded-lg text-sm font-medium
-                  bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700
-                  disabled:text-gray-500 transition-all"
-              >
-                {claimed.has(issue.id) ? 'Claimed ✓' : 'Claim'}
-              </button>
-            </div>
+        {/* Error */}
+        {error && (
+          <div style={{
+            background: 'rgba(248,81,73,0.1)', border: '1px solid var(--accent-red)',
+            color: 'var(--accent-red)', borderRadius: 8, padding: '12px 16px', marginBottom: 20,
+            fontSize: 13,
+          }}>
+            {error}
           </div>
-        ))}
-      </div>
+        )}
 
+        {/* Issues list */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {loading
+            ? [0, 1, 2, 3, 4].map(i => <SkeletonCard key={i} />)
+            : issues.map(issue => (
+                <IssueCard
+                  key={issue.id}
+                  issue={issue}
+                  claimed={claimed.has(issue.id)}
+                  onClaim={() => handleClaim(issue)}
+                />
+              ))
+          }
+        </div>
+
+        {/* Load more */}
+        {!loading && issues.length > 0 && (
+          <div style={{ textAlign: 'center', marginTop: 28 }}>
+            <button
+              onClick={handleLoadMore}
+              disabled={loadingMore}
+              style={{
+                padding: '8px 24px', borderRadius: 6, fontSize: 13, fontWeight: 500,
+                border: '1px solid var(--border)', background: 'var(--bg-surface)',
+                color: 'var(--text-secondary)', cursor: 'pointer',
+              }}
+            >
+              {loadingMore ? 'Loading...' : 'Load More'}
+            </button>
+          </div>
+        )}
+      </main>
+
+      {/* Dashboard FAB */}
       <a
         href="/dashboard"
-        className="fixed bottom-6 right-6 bg-green-600 hover:bg-green-500
-          text-white px-5 py-3 rounded-full font-medium shadow-lg transition-all"
+        style={{
+          position: 'fixed', bottom: 24, right: 24,
+          background: 'var(--accent-green)', color: '#0D1117',
+          padding: '10px 20px', borderRadius: 24,
+          fontSize: 13, fontWeight: 600, textDecoration: 'none',
+          boxShadow: '0 4px 20px rgba(63,185,80,0.3)',
+        }}
       >
         My Dashboard →
       </a>
-    </main>
+    </>
   );
 }
